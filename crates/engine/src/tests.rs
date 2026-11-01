@@ -11117,8 +11117,11 @@ fn ctrl_y_refused_on_protected_document() {
     let mut s = s();
     run(&mut s, "text.insert", json!({"text": "hi"}));
     run(&mut s, "review.restrict", json!({"mode": "readOnly"}));
+    s.last_command = Some(("text.insert".into(), json!({"text": "hi"})));
+    let before = text(&s);
     assert!(!s.can_redo());
     assert!(s.run("edit.repeatOrRedo", &json!({})).is_err());
+    assert_eq!(text(&s), before);
 }
 
 /// #4286: Ctrl+Y returns an error when there is nothing to redo and nothing to repeat.
@@ -11127,4 +11130,20 @@ fn ctrl_y_nothing_to_repeat_returns_error() {
     let mut s = s();
     assert!(!s.can_redo());
     assert!(matches!(s.run("edit.repeatOrRedo", &json!({})), Err(crate::CmdError::Failed(_))));
+}
+
+/// #4286: A user's remapped Mod+Y is kept, and customizing Mod+Y tracks conflicts.
+#[test]
+fn ctrl_y_custom_keymap_and_conflict_kept() {
+    let mut s = s();
+    assert_eq!(s.keymap.resolve(&s.registry, "Mod+Y").map(|c| c.id), Some("edit.repeatOrRedo"));
+    assert_eq!(s.keymap.resolve(&s.registry, "Mod+Shift+Z").map(|c| c.id), Some("edit.redo"));
+
+    let r = s.run("tools.customizeKeyboard", &json!({"assign": {"command": "format.bold", "key": "Mod+Y"}, "key": "Mod+Y"})).unwrap();
+    assert_eq!(r["replaced"].as_str(), Some("edit.repeatOrRedo"));
+    assert_eq!(s.keymap.resolve(&s.registry, "Mod+Y").map(|c| c.id), Some("format.bold"));
+
+    let r2 = s.run("tools.customizeKeyboard", &json!({"assign": {"command": "edit.redo", "key": "Mod+Y"}, "key": "Mod+Y"})).unwrap();
+    assert_eq!(r2["replaced"].as_str(), Some("format.bold"));
+    assert_eq!(s.keymap.resolve(&s.registry, "Mod+Y").map(|c| c.id), Some("edit.redo"));
 }
